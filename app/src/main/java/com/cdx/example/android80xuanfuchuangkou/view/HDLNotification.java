@@ -9,7 +9,6 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.Message;
 import android.text.TextUtils;
-import android.util.Log;
 import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.MotionEvent;
@@ -36,39 +35,41 @@ import static android.view.WindowManager.LayoutParams.TYPE_SYSTEM_ALERT;
 
 public class HDLNotification implements View.OnTouchListener {
 
-    private static final int DIRECTION_LEFT = -1;
-    private static final int DIRECTION_NONE = 0;
-    private static final int DIRECTION_RIGHT = 1;
-    private static final int DIRECTION_UP = 2;
+    private static final int DIRECTION_LEFT = -1;//向左的方向
+    private static final int DIRECTION_NONE = 0;//没有方向
+    private static final int DIRECTION_RIGHT = 1;//向右的方向
+    private static final int DIRECTION_UP = 2;//向上的方向
 
     private static final int DISMISS_INTERVAL = 5000;
 
-    private WindowManager mWindowManager;
-    private WindowManager.LayoutParams mWindowParams;
-    private View mContentView;
-    private Context mContext;
-    private int mScreenWidth = 0;
-    private int mStatusBarHeight = 0;//状态栏的高度，也就是导航栏的高度
+    private WindowManager mWindowManager;//窗口管理器
+    private WindowManager.LayoutParams mWindowParams;//窗口管理参数
+    private View mContentView;//内容View
+    private Context mContext;//上下文
+    private int mScreenWidth;//屏幕的宽度
+    private int mStatusBarHeight;//状态栏的高度，也就是导航栏的高度
 
     private boolean isShowing = false;
     private ValueAnimator restoreAnimator = null;
     private ValueAnimator dismissAnimator = null;
-    private ImageView mIvIcon;
-    private TextView mTvTitle;
-    private TextView mTvContent;
-    private TextView mTvTime;
+    private ImageView mIvIcon;//图标
+    private TextView mTvTitle;//标题
+    private TextView mTvContent;//内容
+    private TextView mTvTime;//时间
+
+    private int mDownX = 0;//手指按下的位置
+    private int mDownY = 0;//手指按下的位置
+    private int direction = DIRECTION_NONE;//手指移动的方向
 
 
     public HDLNotification(Builder builder) {
         mContext = MyApplication.getContext();
-
         mStatusBarHeight = getStatusBarHeight();
         mScreenWidth = mContext.getResources().getDisplayMetrics().widthPixels;
 
-        mWindowManager = (WindowManager)
-                mContext.getSystemService(Context.WINDOW_SERVICE);
+        mWindowManager = (WindowManager) mContext.getSystemService(Context.WINDOW_SERVICE);
         mWindowParams = new WindowManager.LayoutParams();
-
+        //为了兼容各个版本 Android6.0,Android7.0,Android8.0关于弹出Window有不同的一个机制。
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             mWindowParams.type = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY;
         } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT && Build.VERSION.SDK_INT < Build.VERSION_CODES.M){
@@ -84,6 +85,7 @@ public class HDLNotification implements View.OnTouchListener {
                         WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS;
         //设置进入和退出动画
         mWindowParams.windowAnimations = R.style.NotificationAnim;
+        //Android的坐标系不包括状态栏，但是包括ActionBar。
         mWindowParams.x = 0;
         mWindowParams.y = -mStatusBarHeight;
 
@@ -112,15 +114,16 @@ public class HDLNotification implements View.OnTouchListener {
      */
     private void setContentView(Context context, Builder builder) {
         mContentView = LayoutInflater.from(context).inflate(R.layout.layout_notification, null);
+        //设置空View的高度为状态栏的高度
         View v_state_bar = mContentView.findViewById(R.id.v_state_bar);
         ViewGroup.LayoutParams layoutParameter = v_state_bar.getLayoutParams();
         layoutParameter.height = mStatusBarHeight;
         v_state_bar.setLayoutParams(layoutParameter);
 
-        mIvIcon = (ImageView) mContentView.findViewById(R.id.iv_icon);
-        mTvTitle = (TextView) mContentView.findViewById(R.id.tv_title);
-        mTvContent = (TextView) mContentView.findViewById(R.id.tv_content);
-        mTvTime = (TextView) mContentView.findViewById(R.id.tv_time);
+        mIvIcon = mContentView.findViewById(R.id.iv_icon);
+        mTvTitle = mContentView.findViewById(R.id.tv_title);
+        mTvContent = mContentView.findViewById(R.id.tv_content);
+        mTvTime = mContentView.findViewById(R.id.tv_time);
 
         setIcon(builder.imgRes);
         setTitle(builder.title);
@@ -130,11 +133,6 @@ public class HDLNotification implements View.OnTouchListener {
         mContentView.setOnTouchListener(this);
     }
 
-
-    private int downX = 0;
-    private int downY = 0;
-    private int direction = DIRECTION_NONE;
-
     @Override
     public boolean onTouch(View v, MotionEvent event) {
         if (isAnimatorRunning()) {
@@ -142,40 +140,43 @@ public class HDLNotification implements View.OnTouchListener {
         }
         switch (event.getAction()) {
             case MotionEvent.ACTION_DOWN:
-                downX = (int) event.getRawX();
-                downY = (int) event.getRawY();
+                mDownX = (int) event.getRawX();
+                mDownY = (int) event.getRawY();
                 break;
             case MotionEvent.ACTION_MOVE:
                 //处于滑动状态就取消自动消失
                 mHandler.removeMessages(HIDE_WINDOW);
-                int moveX = (int) event.getRawX() - downX;
-                int moveY = (int) event.getRawY() - downY;
-                Log.e("cdx","moveY:" + moveY);
+                //记录移动的长度
+                int moveX = (int) event.getRawX() - mDownX;
+                int moveY = (int) event.getRawY() - mDownY;
+                //水平方向和竖直方向
                 if (Math.abs(moveY) >= Math.abs(moveX)){
-                    //向上滑动
+                    //向上滑动:更新Window的位置。
                     if (moveY < 0){
                         direction = DIRECTION_UP;
                         updateWindowLocation(mWindowParams.x,moveY-mStatusBarHeight);
-                        Log.e("cdx1","moveY:"+moveY);
-//                        Log.e("cdx1","mStatusBarHeight:" + mStatusBarHeight);
                     }
                 } else {
-                    //判断滑动方向
+                    //如果是向右
                     if (moveX > 0) {
                         direction = DIRECTION_RIGHT;
                     } else {
+                        //如果是向左
                         direction = DIRECTION_LEFT;
                     }
                     updateWindowLocation(moveX, mWindowParams.y);
                 }
                 break;
             case MotionEvent.ACTION_UP:
+                //如果是向上，那么开启消失的动画
                 if (direction == DIRECTION_UP) {
                     startDismissAnimator(direction);
                 } else {
+                    //如果window向左移动了超过屏幕的一半或者向右移动了屏幕的一半，那么就让这个window消失。
                     if (Math.abs(mWindowParams.x) > mScreenWidth / 2) {
                         startDismissAnimator(direction);
                     } else {
+                        //如果window处在屏幕中间的左边，那么让这个window消失。
                         startRestoreAnimator();
                     }
                 }
@@ -206,21 +207,27 @@ public class HDLNotification implements View.OnTouchListener {
         restoreAnimator.start();
     }
 
+    /**
+     * 开启消失动画
+     * @param direction
+     */
     private void startDismissAnimator(int direction) {
         if (direction == DIRECTION_UP){//向上滑动
+            //移除屏幕动画
             dismissAnimator = new ValueAnimator().ofInt(mWindowParams.y,-mStatusBarHeight - mContentView.getHeight());
-            Log.e("cdx4","mWindowParams.y:"+mWindowParams.y);
             dismissAnimator.setDuration(300);
             dismissAnimator.setEvaluator(new IntEvaluator());
             dismissAnimator.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
                 @Override
                 public void onAnimationUpdate(ValueAnimator animation) {
+                    //水平位置不变，竖直位置变化。
                     updateWindowLocation(0, (Integer) animation.getAnimatedValue());
                 }
             });
             dismissAnimator.addListener(new AnimatorListenerAdapter() {
                 @Override
                 public void onAnimationEnd(Animator animation) {
+                    //动画结束的时候，从windowManager中移除View.
                     restoreAnimator = null;
                     dismiss();
                 }
@@ -252,28 +259,43 @@ public class HDLNotification implements View.OnTouchListener {
         }
     }
 
+    /**
+     * 判断动画是否进行
+     * @return
+     */
     private boolean isAnimatorRunning() {
         return (restoreAnimator != null && restoreAnimator.isRunning()) || (dismissAnimator != null && dismissAnimator.isRunning());
     }
 
+    /**
+     * 更新窗口位置
+     * @param x
+     * @param y
+     */
     public void updateWindowLocation(int x, int y) {
         if (isShowing) {
             mWindowParams.x = x;
             mWindowParams.y = y;
-            Log.e("cdx3","mWindowParams.y:" + mWindowParams.y);
             mWindowManager.updateViewLayout(mContentView, mWindowParams);
         }
-
     }
 
+    /**
+     * 展示悬浮窗
+     */
     public void show() {
         if (!isShowing) {
             isShowing = true;
+            //将View添加进入WindowManager。
             mWindowManager.addView(mContentView, mWindowParams);
+            //5秒以后从WindowManager中移除View。
             autoDismiss();
         }
     }
 
+    /**
+     * 移除炫富穿
+     */
     public void dismiss() {
         if (isShowing) {
             resetState();
