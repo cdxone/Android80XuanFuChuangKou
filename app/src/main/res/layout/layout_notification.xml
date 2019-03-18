@@ -4,9 +4,10 @@
     android:layout_height="wrap_content"
     android:layout_margin="10dp"
     android:orientation="vertical"
-    android:background="@drawable/shape_notification"
+    android:background="@color/colorAccent"
     >
     <!--这个背景颜色一定要加，否则会出现莫名的错误-->
+    <!--android:background="@drawable/shape_notification"-->
 
     <View
         android:id="@+id/v_state_bar"

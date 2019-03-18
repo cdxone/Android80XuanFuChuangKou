@@ -9,6 +9,7 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.Message;
 import android.text.TextUtils;
+import android.util.Log;
 import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.MotionEvent;
@@ -30,7 +31,7 @@ import static android.view.WindowManager.LayoutParams.TYPE_SYSTEM_ALERT;
 /**
  * Created by： lgz
  * Time： 2018/12/24
- * Desc：
+ * Desc：通知悬浮窗
  */
 
 public class HDLNotification implements View.OnTouchListener {
@@ -38,6 +39,7 @@ public class HDLNotification implements View.OnTouchListener {
     private static final int DIRECTION_LEFT = -1;
     private static final int DIRECTION_NONE = 0;
     private static final int DIRECTION_RIGHT = 1;
+    private static final int DIRECTION_UP = 2;
 
     private static final int DISMISS_INTERVAL = 5000;
 
@@ -46,7 +48,7 @@ public class HDLNotification implements View.OnTouchListener {
     private View mContentView;
     private Context mContext;
     private int mScreenWidth = 0;
-    private int mStatusBarHeight = 0;
+    private int mStatusBarHeight = 0;//状态栏的高度，也就是导航栏的高度
 
     private boolean isShowing = false;
     private ValueAnimator restoreAnimator = null;
@@ -66,7 +68,7 @@ public class HDLNotification implements View.OnTouchListener {
         mWindowManager = (WindowManager)
                 mContext.getSystemService(Context.WINDOW_SERVICE);
         mWindowParams = new WindowManager.LayoutParams();
-        //
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             mWindowParams.type = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY;
         } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT && Build.VERSION.SDK_INT < Build.VERSION_CODES.M){
@@ -130,6 +132,7 @@ public class HDLNotification implements View.OnTouchListener {
 
 
     private int downX = 0;
+    private int downY = 0;
     private int direction = DIRECTION_NONE;
 
     @Override
@@ -140,26 +143,41 @@ public class HDLNotification implements View.OnTouchListener {
         switch (event.getAction()) {
             case MotionEvent.ACTION_DOWN:
                 downX = (int) event.getRawX();
+                downY = (int) event.getRawY();
                 break;
             case MotionEvent.ACTION_MOVE:
                 //处于滑动状态就取消自动消失
                 mHandler.removeMessages(HIDE_WINDOW);
                 int moveX = (int) event.getRawX() - downX;
-                //判断滑动方向
-                if (moveX > 0) {
-                    direction = DIRECTION_RIGHT;
+                int moveY = (int) event.getRawY() - downY;
+                Log.e("cdx","moveY:" + moveY);
+                if (Math.abs(moveY) >= Math.abs(moveX)){
+                    //向上滑动
+                    if (moveY < 0){
+                        direction = DIRECTION_UP;
+                        updateWindowLocation(mWindowParams.x,moveY-mStatusBarHeight);
+                        Log.e("cdx1","moveY:"+moveY);
+//                        Log.e("cdx1","mStatusBarHeight:" + mStatusBarHeight);
+                    }
                 } else {
-                    direction = DIRECTION_LEFT;
+                    //判断滑动方向
+                    if (moveX > 0) {
+                        direction = DIRECTION_RIGHT;
+                    } else {
+                        direction = DIRECTION_LEFT;
+                    }
+                    updateWindowLocation(moveX, mWindowParams.y);
                 }
-
-                updateWindowLocation(moveX, mWindowParams.y);
-
                 break;
             case MotionEvent.ACTION_UP:
-                if (Math.abs(mWindowParams.x) > mScreenWidth / 2) {
+                if (direction == DIRECTION_UP) {
                     startDismissAnimator(direction);
                 } else {
-                    startRestoreAnimator();
+                    if (Math.abs(mWindowParams.x) > mScreenWidth / 2) {
+                        startDismissAnimator(direction);
+                    } else {
+                        startRestoreAnimator();
+                    }
                 }
                 break;
         }
@@ -189,28 +207,49 @@ public class HDLNotification implements View.OnTouchListener {
     }
 
     private void startDismissAnimator(int direction) {
-        if (direction == DIRECTION_LEFT)
-            dismissAnimator = new ValueAnimator().ofInt(mWindowParams.x, -mScreenWidth);
-        else {
-            dismissAnimator = new ValueAnimator().ofInt(mWindowParams.x, mScreenWidth);
-        }
-        dismissAnimator.setDuration(300);
-        dismissAnimator.setEvaluator(new IntEvaluator());
+        if (direction == DIRECTION_UP){//向上滑动
+            dismissAnimator = new ValueAnimator().ofInt(mWindowParams.y,-mStatusBarHeight - mContentView.getHeight());
+            Log.e("cdx4","mWindowParams.y:"+mWindowParams.y);
+            dismissAnimator.setDuration(300);
+            dismissAnimator.setEvaluator(new IntEvaluator());
+            dismissAnimator.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
+                @Override
+                public void onAnimationUpdate(ValueAnimator animation) {
+                    updateWindowLocation(0, (Integer) animation.getAnimatedValue());
+                }
+            });
+            dismissAnimator.addListener(new AnimatorListenerAdapter() {
+                @Override
+                public void onAnimationEnd(Animator animation) {
+                    restoreAnimator = null;
+                    dismiss();
+                }
+            });
+            dismissAnimator.start();
+        } else {
+            if (direction == DIRECTION_LEFT)
+                dismissAnimator = new ValueAnimator().ofInt(mWindowParams.x, -mScreenWidth);
+            else {
+                dismissAnimator = new ValueAnimator().ofInt(mWindowParams.x, mScreenWidth);
+            }
+            dismissAnimator.setDuration(300);
+            dismissAnimator.setEvaluator(new IntEvaluator());
 
-        dismissAnimator.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
-            @Override
-            public void onAnimationUpdate(ValueAnimator animation) {
-                updateWindowLocation((Integer) animation.getAnimatedValue(), -mStatusBarHeight);
-            }
-        });
-        dismissAnimator.addListener(new AnimatorListenerAdapter() {
-            @Override
-            public void onAnimationEnd(Animator animation) {
-                restoreAnimator = null;
-                dismiss();
-            }
-        });
-        dismissAnimator.start();
+            dismissAnimator.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
+                @Override
+                public void onAnimationUpdate(ValueAnimator animation) {
+                    updateWindowLocation((Integer) animation.getAnimatedValue(), -mStatusBarHeight);
+                }
+            });
+            dismissAnimator.addListener(new AnimatorListenerAdapter() {
+                @Override
+                public void onAnimationEnd(Animator animation) {
+                    restoreAnimator = null;
+                    dismiss();
+                }
+            });
+            dismissAnimator.start();
+        }
     }
 
     private boolean isAnimatorRunning() {
@@ -221,6 +260,7 @@ public class HDLNotification implements View.OnTouchListener {
         if (isShowing) {
             mWindowParams.x = x;
             mWindowParams.y = y;
+            Log.e("cdx3","mWindowParams.y:" + mWindowParams.y);
             mWindowManager.updateViewLayout(mContentView, mWindowParams);
         }
 
@@ -316,34 +356,26 @@ public class HDLNotification implements View.OnTouchListener {
             return this;
         }
 
-
         public Builder setTitle(String title) {
             this.title = title;
             return this;
         }
-
 
         public Builder setContent(String content) {
             this.content = content;
             return this;
         }
 
-
         public Builder setTime(long time) {
             this.time = time;
             return this;
         }
 
-
         public HDLNotification build() {
-
             if (null == context)
                 throw new IllegalArgumentException("the context is required.");
 
             return new HDLNotification(this);
         }
-
-
     }
-
 }
